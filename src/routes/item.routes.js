@@ -10,6 +10,8 @@ const {
   getItemById,
   updateItem,
   deleteItem,
+  toggleItemAvailability,
+  resumeItemAutoAvailability,
 } = require("../controllers/item.controller");
 
 router.post(
@@ -38,5 +40,13 @@ router.delete(
   "/:id",
   deleteItem
 );
+router.patch(
+  "/:id/toggle-availability",
+  toggleItemAvailability
+);
 
+router.patch(
+  "/:id/resume-auto-availability",
+  resumeItemAutoAvailability
+);
 module.exports = router;

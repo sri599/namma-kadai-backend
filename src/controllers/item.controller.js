@@ -1,6 +1,29 @@
 const Item = require("../models/Item");
 const Shop = require("../models/Shop");
 const Category = require("../models/Category");
+// actualPrice is required. sellingPrice and discountPrice are derived from each other
+// if only one is sent — send either sellingPrice OR discountPrice, not both, unless you
+// want to set them explicitly.
+function computePricing(body) {
+  const actualPrice = Number(body.actualPrice);
+
+  let sellingPrice =
+    body.sellingPrice !== undefined ? Number(body.sellingPrice) : undefined;
+
+  let discountPrice =
+    body.discountPrice !== undefined ? Number(body.discountPrice) : undefined;
+
+  if (sellingPrice === undefined && discountPrice !== undefined) {
+    sellingPrice = actualPrice - discountPrice;
+  } else if (discountPrice === undefined && sellingPrice !== undefined) {
+    discountPrice = actualPrice - sellingPrice;
+  } else if (sellingPrice === undefined && discountPrice === undefined) {
+    sellingPrice = actualPrice;
+    discountPrice = 0;
+  }
+
+  return { actualPrice, sellingPrice, discountPrice };
+}
 
 const {
   uploadImage,
@@ -72,10 +95,10 @@ exports.createItem = async (req, res) => {
 
       images,
 
-      price: Number(req.body.price),
+      ...computePricing(req.body),
 
-      offerPrice:
-        Number(req.body.offerPrice || 0),
+      qty:
+        Number(req.body.qty || 1),
 
       unit:
         req.body.unit || "pcs",
@@ -88,6 +111,12 @@ exports.createItem = async (req, res) => {
 
       isAvailable:
         req.body.isAvailable == "true",
+
+      isManualOverride: false,
+
+      openingTime: req.body.openingTime || "",
+
+      closingTime: req.body.closingTime || "",
 
       displayOrder:
         Number(req.body.displayOrder || 0),
@@ -141,12 +170,12 @@ exports.getItems = async (req, res) => {
       filter.isActive =
         req.query.isActive == "true";
 
-    const items =
+const items =
       await Item.find(filter)
 
         .populate(
           "shop",
-          "name phone image"
+          "name phone image openingTime closingTime"
         )
 
         .populate(
@@ -158,13 +187,22 @@ exports.getItems = async (req, res) => {
           displayOrder: 1,
         });
 
+    const data = items.map((item) => {
+      const obj = item.toObject();
+      obj.isAvailable = item.getCurrentAvailability(
+        item.shop?.openingTime,
+        item.shop?.closingTime
+      );
+      return obj;
+    });
+
     res.json({
 
       success: true,
 
-      count: items.length,
+      count: data.length,
 
-      data: items,
+      data,
 
     });
 
@@ -193,7 +231,7 @@ exports.getItemById = async (
 
   try {
 
-    const item =
+   const item =
       await Item.findById(
         req.params.id
       )
@@ -219,11 +257,17 @@ exports.getItemById = async (
 
     }
 
+    const itemObj = item.toObject();
+    itemObj.isAvailable = item.getCurrentAvailability(
+      item.shop?.openingTime,
+      item.shop?.closingTime
+    );
+
     res.json({
 
       success: true,
 
-      data: item,
+      data: itemObj,
 
     });
 
@@ -319,11 +363,23 @@ exports.updateItem = async (req, res) => {
     if (req.body.description_ta !== undefined)
       item.description.ta = req.body.description_ta;
 
-    if (req.body.price !== undefined)
-      item.price = Number(req.body.price);
+    if (
+      req.body.actualPrice !== undefined ||
+      req.body.sellingPrice !== undefined ||
+      req.body.discountPrice !== undefined
+    ) {
+      const pricing = computePricing({
+        actualPrice: req.body.actualPrice ?? item.actualPrice,
+        sellingPrice: req.body.sellingPrice,
+        discountPrice: req.body.discountPrice,
+      });
+      item.actualPrice = pricing.actualPrice;
+      item.sellingPrice = pricing.sellingPrice;
+      item.discountPrice = pricing.discountPrice;
+    }
 
-    if (req.body.offerPrice !== undefined)
-      item.offerPrice = Number(req.body.offerPrice);
+    if (req.body.qty !== undefined)
+      item.qty = Number(req.body.qty);
 
     if (req.body.unit !== undefined)
       item.unit = req.body.unit;
@@ -334,8 +390,11 @@ exports.updateItem = async (req, res) => {
     if (req.body.isVeg !== undefined)
       item.isVeg = req.body.isVeg == "true";
 
-    if (req.body.isAvailable !== undefined)
-      item.isAvailable = req.body.isAvailable == "true";
+    if (req.body.openingTime !== undefined)
+      item.openingTime = req.body.openingTime;
+
+    if (req.body.closingTime !== undefined)
+      item.closingTime = req.body.closingTime;
 
     if (req.body.displayOrder !== undefined)
       item.displayOrder = Number(req.body.displayOrder);
@@ -361,7 +420,85 @@ exports.updateItem = async (req, res) => {
   }
 };
 
+// Toggle Item Availability (manual override)
+exports.toggleItemAvailability = async (req, res) => {
+  try {
 
+    const item = await Item.findById(req.params.id);
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Item not found",
+      });
+    }
+
+    item.isManualOverride = true;
+
+    item.isAvailable =
+      req.body.isAvailable !== undefined
+        ? req.body.isAvailable == "true" || req.body.isAvailable === true
+        : !item.isAvailable;
+
+    await item.save();
+
+    res.json({
+      success: true,
+      message: "Item availability updated successfully",
+      data: item,
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};
+
+
+
+// Resume Automatic (opening/closing time based) Availability
+exports.resumeItemAutoAvailability = async (req, res) => {
+  try {
+
+    const item = await Item.findById(req.params.id).populate(
+      "shop",
+      "openingTime closingTime"
+    );
+
+    if (!item) {
+      return res.status(404).json({
+        success: false,
+        message: "Item not found",
+      });
+    }
+
+    item.isManualOverride = false;
+    item.isAvailable = item.getCurrentAvailability(
+      item.shop?.openingTime,
+      item.shop?.closingTime
+    );
+
+    await item.save();
+
+    res.json({
+      success: true,
+      message: "Item resumed automatic availability",
+      data: item,
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};
 // DELETE ITEM
 exports.deleteItem = async (req, res) => {
   try {

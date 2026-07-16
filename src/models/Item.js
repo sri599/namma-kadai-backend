@@ -54,15 +54,28 @@ const itemSchema = new mongoose.Schema(
 
     images: [imageSchema],
 
-    price: {
+   actualPrice: {
       type: Number,
       required: true,
       min: 0,
     },
 
-    offerPrice: {
+    sellingPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    discountPrice: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+
+    qty: {
+      type: Number,
+      default: 1,
+      min: 0,
     },
 
     unit: {
@@ -80,9 +93,27 @@ const itemSchema = new mongoose.Schema(
       default: true,
     },
 
+   // Manually-set availability value (used when isManualOverride is true)
     isAvailable: {
       type: Boolean,
       default: true,
+    },
+
+    // true once someone manually toggles availability — auto time-window logic is skipped until resumed
+    isManualOverride: {
+      type: Boolean,
+      default: false,
+    },
+
+    // Optional per-item hours; if left blank, falls back to the parent shop's openingTime/closingTime.
+    openingTime: {
+      type: String,
+      default: "",
+    },
+
+    closingTime: {
+      type: String,
+      default: "",
     },
 
     displayOrder: {
@@ -99,5 +130,37 @@ const itemSchema = new mongoose.Schema(
     timestamps: true,
   }
 );
+const IST_OFFSET_MINUTES = 5 * 60 + 30;
+
+// openingTime/closingTime must be 24hr "HH:mm" strings, e.g. "09:00", "22:30"
+itemSchema.statics.computeIsAvailable = function (openingTime, closingTime) {
+  if (!openingTime || !closingTime) return true;
+
+  const now = new Date();
+  const nowUtcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const nowMinutes = (nowUtcMinutes + IST_OFFSET_MINUTES) % (24 * 60);
+
+  const [openH, openM] = openingTime.split(":").map(Number);
+  const [closeH, closeM] = closingTime.split(":").map(Number);
+
+  const openMinutes = openH * 60 + openM;
+  const closeMinutes = closeH * 60 + closeM;
+
+  if (closeMinutes > openMinutes) {
+    return nowMinutes >= openMinutes && nowMinutes < closeMinutes;
+  }
+
+  return nowMinutes >= openMinutes || nowMinutes < closeMinutes;
+};
+
+// shopOpeningTime/shopClosingTime are used only when this item has no hours of its own set.
+itemSchema.methods.getCurrentAvailability = function (shopOpeningTime, shopClosingTime) {
+  if (this.isManualOverride) return this.isAvailable;
+
+  const openingTime = this.openingTime || shopOpeningTime;
+  const closingTime = this.closingTime || shopClosingTime;
+
+  return this.constructor.computeIsAvailable(openingTime, closingTime);
+};
 
 module.exports = mongoose.model("Item", itemSchema);
