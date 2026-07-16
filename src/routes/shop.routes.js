@@ -10,6 +10,8 @@ const {
   getShopById,
   updateShop,
   deleteShop,
+  toggleShopStatus,
+  resumeAutoStatus,
 } = require("../controllers/shop.controller");
 
 router.post(
@@ -37,6 +39,15 @@ router.put(
 router.delete(
   "/:id",
   deleteShop
+);
+router.patch(
+  "/:id/toggle-status",
+  toggleShopStatus
+);
+
+router.patch(
+  "/:id/resume-auto-status",
+  resumeAutoStatus
 );
 
 module.exports = router;

@@ -99,6 +99,15 @@ const shopSchema = new mongoose.Schema(
         default: [0, 0],
       },
     },
+    latitude: {
+      type: Number,
+      default: 0,
+    },
+
+    longitude: {
+      type: Number,
+      default: 0,
+    },
 
     openingTime: {
       type: String,
@@ -125,6 +134,12 @@ const shopSchema = new mongoose.Schema(
       default: true,
     },
 
+    // true once owner manually toggles status — auto time-window logic is skipped until resumed
+    isManualOverride: {
+      type: Boolean,
+      default: false,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
@@ -137,6 +152,39 @@ const shopSchema = new mongoose.Schema(
 
 shopSchema.index({
   location: "2dsphere",
+});
+
+// openingTime/closingTime must be 24hr "HH:mm" strings, e.g. "09:00", "22:30"
+shopSchema.statics.computeIsOpen = function (openingTime, closingTime) {
+  if (!openingTime || !closingTime) return true;
+
+  const now = new Date();
+  const [openH, openM] = openingTime.split(":").map(Number);
+  const [closeH, closeM] = closingTime.split(":").map(Number);
+
+  const openMinutes = openH * 60 + openM;
+  const closeMinutes = closeH * 60 + closeM;
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+  if (closeMinutes > openMinutes) {
+    // same-day window, e.g. 09:00 - 22:00
+    return nowMinutes >= openMinutes && nowMinutes < closeMinutes;
+  }
+
+  // overnight window, e.g. 20:00 - 02:00
+  return nowMinutes >= openMinutes || nowMinutes < closeMinutes;
+};
+
+shopSchema.methods.getCurrentStatus = function () {
+  if (this.isManualOverride) return this.isOpen;
+  return this.constructor.computeIsOpen(this.openingTime, this.closingTime);
+};
+
+shopSchema.pre("save", function (next) {
+  if (this.latitude || this.longitude) {
+    this.location.coordinates = [this.longitude || 0, this.latitude || 0];
+  }
+  next();
 });
 
 module.exports = mongoose.model("Shop", shopSchema);

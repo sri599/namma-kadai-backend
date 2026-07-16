@@ -54,6 +54,10 @@ exports.createShop = async (req, res) => {
         pincode: req.body.pincode || "",
       },
 
+      latitude: Number(req.body.latitude || 0),
+
+      longitude: Number(req.body.longitude || 0),
+
       location: {
         type: "Point",
         coordinates: [
@@ -70,10 +74,12 @@ exports.createShop = async (req, res) => {
 
       displayOrder: req.body.displayOrder || 0,
 
-      isOpen:
-        req.body.isOpen === "false"
-          ? false
-          : true,
+      isOpen: Shop.computeIsOpen(
+        req.body.openingTime,
+        req.body.closingTime
+      ),
+
+      isManualOverride: false,
 
       isActive:
         req.body.isActive === "false"
@@ -109,10 +115,16 @@ exports.getShops = async (req, res) => {
         displayOrder: 1,
       });
 
+    const data = shops.map((shop) => {
+      const obj = shop.toObject();
+      obj.isOpen = shop.getCurrentStatus();
+      return obj;
+    });
+
     res.json({
       success: true,
-      count: shops.length,
-      data: shops,
+      count: data.length,
+      data,
     });
 
   } catch (error) {
@@ -145,9 +157,12 @@ exports.getShopById = async (req, res) => {
 
     }
 
+    const shopObj = shop.toObject();
+    shopObj.isOpen = shop.getCurrentStatus();
+
     res.json({
       success: true,
-      data: shop,
+      data: shopObj,
     });
 
   } catch (error) {
@@ -260,6 +275,9 @@ exports.updateShop = async (req, res) => {
       req.body.longitude
     ) {
 
+      shop.latitude = Number(req.body.latitude);
+      shop.longitude = Number(req.body.longitude);
+
       shop.location.coordinates = [
         Number(req.body.longitude),
         Number(req.body.latitude),
@@ -295,12 +313,17 @@ exports.updateShop = async (req, res) => {
       shop.displayOrder =
         req.body.displayOrder;
 
+   // openingTime/closingTime changed and not manually overridden -> recompute
     if (
-      req.body.isOpen !==
-      undefined
-    )
-      shop.isOpen =
-        req.body.isOpen == "true";
+      !shop.isManualOverride &&
+      (req.body.openingTime !== undefined ||
+        req.body.closingTime !== undefined)
+    ) {
+      shop.isOpen = Shop.computeIsOpen(
+        shop.openingTime,
+        shop.closingTime
+      );
+    }
 
     if (
       req.body.isActive !==
@@ -367,4 +390,77 @@ exports.deleteShop = async (req, res) => {
 
   }
 
+};
+// Toggle Shop Open/Close (manual override)
+exports.toggleShopStatus = async (req, res) => {
+  try {
+
+    const shop = await Shop.findById(req.params.id);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found",
+      });
+    }
+
+    shop.isManualOverride = true;
+
+    shop.isOpen =
+      req.body.isOpen !== undefined
+        ? req.body.isOpen == "true" || req.body.isOpen === true
+        : !shop.isOpen;
+
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: "Shop status updated successfully",
+      data: shop,
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
+};
+
+
+
+// Resume Automatic (opening/closing time based) Status
+exports.resumeAutoStatus = async (req, res) => {
+  try {
+
+    const shop = await Shop.findById(req.params.id);
+
+    if (!shop) {
+      return res.status(404).json({
+        success: false,
+        message: "Shop not found",
+      });
+    }
+
+    shop.isManualOverride = false;
+    shop.isOpen = shop.getCurrentStatus();
+
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: "Shop resumed automatic status",
+      data: shop,
+    });
+
+  } catch (error) {
+
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+
+  }
 };
