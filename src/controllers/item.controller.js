@@ -7,19 +7,43 @@ const Category = require("../models/Category");
 function computePricing(body) {
   const actualPrice = Number(body.actualPrice);
 
+  if (Number.isNaN(actualPrice) || actualPrice < 0) {
+    throw new Error("actualPrice must be a valid non-negative number");
+  }
+
   let sellingPrice =
     body.sellingPrice !== undefined ? Number(body.sellingPrice) : undefined;
 
   let discountPrice =
     body.discountPrice !== undefined ? Number(body.discountPrice) : undefined;
 
+  if (sellingPrice !== undefined && Number.isNaN(sellingPrice)) {
+    throw new Error("sellingPrice must be a valid number");
+  }
+  if (discountPrice !== undefined && Number.isNaN(discountPrice)) {
+    throw new Error("discountPrice must be a valid number");
+  }
+
   if (sellingPrice === undefined && discountPrice !== undefined) {
+    // discountPrice given -> derive sellingPrice, but never let it exceed actualPrice
+    // or drop below 0.
+    discountPrice = Math.min(Math.max(discountPrice, 0), actualPrice);
     sellingPrice = actualPrice - discountPrice;
   } else if (discountPrice === undefined && sellingPrice !== undefined) {
+    // sellingPrice given -> derive discountPrice, clamping sellingPrice into
+    // [0, actualPrice] so discountPrice never goes negative (which happens
+    // when someone sends a sellingPrice higher than actualPrice) or exceeds
+    // actualPrice.
+    sellingPrice = Math.min(Math.max(sellingPrice, 0), actualPrice);
     discountPrice = actualPrice - sellingPrice;
   } else if (sellingPrice === undefined && discountPrice === undefined) {
     sellingPrice = actualPrice;
     discountPrice = 0;
+  } else {
+    // both provided explicitly — still clamp so they can never violate the
+    // schema's min:0 constraint or disagree with actualPrice.
+    sellingPrice = Math.min(Math.max(sellingPrice, 0), actualPrice);
+    discountPrice = Math.min(Math.max(discountPrice, 0), actualPrice);
   }
 
   return { actualPrice, sellingPrice, discountPrice };
@@ -77,6 +101,16 @@ exports.createItem = async (req, res) => {
 
     }
 
+    let pricing;
+    try {
+      pricing = computePricing(req.body);
+    } catch (err) {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+      });
+    }
+
     const item = await Item.create({
 
       shop: req.body.shop,
@@ -95,7 +129,7 @@ exports.createItem = async (req, res) => {
 
       images,
 
-      ...computePricing(req.body),
+      ...pricing,
 
       qty:
         Number(req.body.qty || 1),
@@ -368,11 +402,19 @@ exports.updateItem = async (req, res) => {
       req.body.sellingPrice !== undefined ||
       req.body.discountPrice !== undefined
     ) {
-      const pricing = computePricing({
-        actualPrice: req.body.actualPrice ?? item.actualPrice,
-        sellingPrice: req.body.sellingPrice,
-        discountPrice: req.body.discountPrice,
-      });
+      let pricing;
+      try {
+        pricing = computePricing({
+          actualPrice: req.body.actualPrice ?? item.actualPrice,
+          sellingPrice: req.body.sellingPrice,
+          discountPrice: req.body.discountPrice,
+        });
+      } catch (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.message,
+        });
+      }
       item.actualPrice = pricing.actualPrice;
       item.sellingPrice = pricing.sellingPrice;
       item.discountPrice = pricing.discountPrice;
