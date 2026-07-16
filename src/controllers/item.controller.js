@@ -1,50 +1,17 @@
 const Item = require("../models/Item");
 const Shop = require("../models/Shop");
 const Category = require("../models/Category");
-// actualPrice is required. sellingPrice and discountPrice are derived from each other
-// if only one is sent — send either sellingPrice OR discountPrice, not both, unless you
-// want to set them explicitly.
+// actualPrice is required. sellingPrice defaults to actualPrice and
+// discountPrice defaults to 0 when not sent — otherwise each value is used
+// exactly as given, with no derivation between them.
 function computePricing(body) {
   const actualPrice = Number(body.actualPrice);
 
-  if (Number.isNaN(actualPrice) || actualPrice < 0) {
-    throw new Error("actualPrice must be a valid non-negative number");
-  }
+  const sellingPrice =
+    body.sellingPrice !== undefined ? Number(body.sellingPrice) : actualPrice;
 
-  let sellingPrice =
-    body.sellingPrice !== undefined ? Number(body.sellingPrice) : undefined;
-
-  let discountPrice =
-    body.discountPrice !== undefined ? Number(body.discountPrice) : undefined;
-
-  if (sellingPrice !== undefined && Number.isNaN(sellingPrice)) {
-    throw new Error("sellingPrice must be a valid number");
-  }
-  if (discountPrice !== undefined && Number.isNaN(discountPrice)) {
-    throw new Error("discountPrice must be a valid number");
-  }
-
-  if (sellingPrice === undefined && discountPrice !== undefined) {
-    // discountPrice given -> derive sellingPrice, but never let it exceed actualPrice
-    // or drop below 0.
-    discountPrice = Math.min(Math.max(discountPrice, 0), actualPrice);
-    sellingPrice = actualPrice - discountPrice;
-  } else if (discountPrice === undefined && sellingPrice !== undefined) {
-    // sellingPrice given -> derive discountPrice, clamping sellingPrice into
-    // [0, actualPrice] so discountPrice never goes negative (which happens
-    // when someone sends a sellingPrice higher than actualPrice) or exceeds
-    // actualPrice.
-    sellingPrice = Math.min(Math.max(sellingPrice, 0), actualPrice);
-    discountPrice = actualPrice - sellingPrice;
-  } else if (sellingPrice === undefined && discountPrice === undefined) {
-    sellingPrice = actualPrice;
-    discountPrice = 0;
-  } else {
-    // both provided explicitly — still clamp so they can never violate the
-    // schema's min:0 constraint or disagree with actualPrice.
-    sellingPrice = Math.min(Math.max(sellingPrice, 0), actualPrice);
-    discountPrice = Math.min(Math.max(discountPrice, 0), actualPrice);
-  }
+  const discountPrice =
+    body.discountPrice !== undefined ? Number(body.discountPrice) : 0;
 
   return { actualPrice, sellingPrice, discountPrice };
 }
@@ -101,15 +68,7 @@ exports.createItem = async (req, res) => {
 
     }
 
-    let pricing;
-    try {
-      pricing = computePricing(req.body);
-    } catch (err) {
-      return res.status(400).json({
-        success: false,
-        message: err.message,
-      });
-    }
+    const pricing = computePricing(req.body);
 
     const item = await Item.create({
 
@@ -402,19 +361,11 @@ exports.updateItem = async (req, res) => {
       req.body.sellingPrice !== undefined ||
       req.body.discountPrice !== undefined
     ) {
-      let pricing;
-      try {
-        pricing = computePricing({
-          actualPrice: req.body.actualPrice ?? item.actualPrice,
-          sellingPrice: req.body.sellingPrice,
-          discountPrice: req.body.discountPrice,
-        });
-      } catch (err) {
-        return res.status(400).json({
-          success: false,
-          message: err.message,
-        });
-      }
+      const pricing = computePricing({
+        actualPrice: req.body.actualPrice ?? item.actualPrice,
+        sellingPrice: req.body.sellingPrice,
+        discountPrice: req.body.discountPrice,
+      });
       item.actualPrice = pricing.actualPrice;
       item.sellingPrice = pricing.sellingPrice;
       item.discountPrice = pricing.discountPrice;
