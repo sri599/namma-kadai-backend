@@ -155,16 +155,21 @@ shopSchema.index({
 });
 
 // openingTime/closingTime must be 24hr "HH:mm" strings, e.g. "09:00", "22:30"
+// Shop hours are in IST (Asia/Kolkata) regardless of the server's own timezone (e.g. Render runs UTC).
+const IST_OFFSET_MINUTES = 5 * 60 + 30;
+
 shopSchema.statics.computeIsOpen = function (openingTime, closingTime) {
   if (!openingTime || !closingTime) return true;
 
   const now = new Date();
+  const nowUtcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+  const nowMinutes = (nowUtcMinutes + IST_OFFSET_MINUTES) % (24 * 60);
+
   const [openH, openM] = openingTime.split(":").map(Number);
   const [closeH, closeM] = closingTime.split(":").map(Number);
 
   const openMinutes = openH * 60 + openM;
   const closeMinutes = closeH * 60 + closeM;
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
 
   if (closeMinutes > openMinutes) {
     // same-day window, e.g. 09:00 - 22:00
