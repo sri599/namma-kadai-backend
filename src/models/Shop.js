@@ -180,11 +180,10 @@ shopSchema.methods.getCurrentStatus = function () {
   return this.constructor.computeIsOpen(this.openingTime, this.closingTime);
 };
 
-shopSchema.pre("save", function (next) {
+shopSchema.pre("save", function () {
   if (this.latitude || this.longitude) {
     this.location.coordinates = [this.longitude || 0, this.latitude || 0];
   }
-  next();
 });
 
 module.exports = mongoose.model("Shop", shopSchema);
