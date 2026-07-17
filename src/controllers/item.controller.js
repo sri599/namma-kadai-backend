@@ -22,7 +22,30 @@ const {
 } = require("../services/cloudinary.service");
 
 
+exports.getItemsByShop = async (req, res) => {
+  try {
+    const items = await Item.find({
+      shop: req.params.shopId,
+      isActive: true,
+    })
+      .populate("shop", "openingTime closingTime")
+      .populate("category", "name image")
+      .sort({ displayOrder: 1 });
 
+    const data = items.map((item) => {
+      const obj = item.toObject();
+      obj.isAvailable = item.getCurrentAvailability(
+        item.shop?.openingTime,
+        item.shop?.closingTime
+      );
+      return obj;
+    });
+
+    res.json({ success: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 // CREATE ITEM
 exports.createItem = async (req, res) => {
   try {

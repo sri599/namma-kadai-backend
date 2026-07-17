@@ -12,6 +12,7 @@ const {
   deleteItem,
   toggleItemAvailability,
   resumeItemAutoAvailability,
+   getItemsByShop,
 } = require("../controllers/item.controller");
 
 router.post(
@@ -24,7 +25,10 @@ router.get(
   "/",
   getItems
 );
-
+router.get(
+  "/by-shop/:shopId",
+  getItemsByShop
+);
 router.get(
   "/:id",
   getItemById
