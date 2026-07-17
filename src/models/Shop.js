@@ -36,6 +36,11 @@ const shopSchema = new mongoose.Schema(
         default: "",
       },
     },
+    category: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ShopCategory",
+      required: true,
+    },
 
     phone: {
       type: String,

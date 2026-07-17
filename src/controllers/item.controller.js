@@ -1,6 +1,6 @@
 const Item = require("../models/Item");
 const Shop = require("../models/Shop");
-const Category = require("../models/Category");
+const Category = require("../models/MenuCategory");
 // actualPrice is required. sellingPrice defaults to actualPrice and
 // discountPrice defaults to 0 when not sent — otherwise each value is used
 // exactly as given, with no derivation between them.

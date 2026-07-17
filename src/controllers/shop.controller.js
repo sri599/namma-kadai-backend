@@ -26,6 +26,10 @@ exports.createShop = async (req, res) => {
         public_id: uploaded.public_id,
       };
     }
+    const shopCategory = await ShopCategory.findById(req.body.category);
+if (!shopCategory) {
+  return res.status(404).json({ success: false, message: "Shop category not found" });
+}
 
     const shop = await Shop.create({
       name: {
@@ -37,6 +41,7 @@ exports.createShop = async (req, res) => {
         en: req.body.description_en || "",
         ta: req.body.description_ta || "",
       },
+      category: req.body.category,
 
       image,
 
@@ -238,6 +243,13 @@ exports.updateShop = async (req, res) => {
 
     if (req.body.phone)
       shop.phone = req.body.phone;
+    if (req.body.category) {
+  const shopCategory = await ShopCategory.findById(req.body.category);
+  if (!shopCategory) {
+    return res.status(404).json({ success: false, message: "Shop category not found" });
+  }
+  shop.category = req.body.category;
+}
 
     if (req.body.email !== undefined)
       shop.email = req.body.email;
@@ -349,6 +361,41 @@ exports.updateShop = async (req, res) => {
 
   }
 
+};
+// Shops by category, each with its available menu items
+exports.getShopsByCategory = async (req, res) => {
+  try {
+    const shops = await Shop.find({
+      category: req.params.categoryId,
+      isActive: true,
+    }).sort({ displayOrder: 1 });
+
+    const data = await Promise.all(
+      shops.map(async (shop) => {
+        const items = await Item.find({ shop: shop._id, isActive: true });
+
+        const availableItems = items
+          .map((item) => {
+            const obj = item.toObject();
+            obj.isAvailable = item.getCurrentAvailability(
+              shop.openingTime,
+              shop.closingTime
+            );
+            return obj;
+          })
+          .filter((item) => item.isAvailable);
+
+        const shopObj = shop.toObject();
+        shopObj.isOpen = shop.getCurrentStatus();
+        shopObj.items = availableItems;
+        return shopObj;
+      })
+    );
+
+    res.json({ success: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 

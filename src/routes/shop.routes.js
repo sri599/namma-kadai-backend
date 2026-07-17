@@ -12,6 +12,7 @@ const {
   deleteShop,
   toggleShopStatus,
   resumeAutoStatus,
+  getShopsByCategory,
 } = require("../controllers/shop.controller");
 
 router.post(
@@ -28,6 +29,10 @@ router.get(
 router.get(
   "/:id",
   getShopById
+);
+router.get(
+  "/by-category/:categoryId",
+  getShopsByCategory
 );
 
 router.put(
