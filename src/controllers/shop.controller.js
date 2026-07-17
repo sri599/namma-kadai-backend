@@ -1,5 +1,6 @@
 const Shop = require("../models/Shop");
-
+const ShopCategory = require("../models/ShopCategory");
+const Item = require("../models/Item");
 const {
   uploadImage,
   deleteImage,
